@@ -1,0 +1,42 @@
+services:
+  # 1. 数据库服务
+  mysql:
+    image: mysql:8.4
+    container_name: customer-service-mysql
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: commerce
+      MYSQL_USER: atguigu
+      MYSQL_PASSWORD: Atguigu.123
+     
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/initdb:/docker-entrypoint-initdb.d
+
+  # 2. 业务后端服务 
+  app:
+    build: ./ecommerce-service-backend
+    container_name: ecommerce-app
+    restart: always
+    ports:
+      - "18081:18081"
+    depends_on:
+      - mysql
+    environment:
+      # 【核心配置】直接使用完整的 URL，并将 IP 替换为服务名 mysql
+      DATABASE_URL: "mysql+pymysql://atguigu:Atguigu.123@mysql:3306/commerce?charset=utf8mb4"
+
+      APP_PORT: 18081
+
+
+   
+
+# 声明持久化卷
+volumes:
+  mysql_data:
