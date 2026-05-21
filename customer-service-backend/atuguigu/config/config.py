@@ -27,4 +27,4 @@ class Settings(BaseSettings):
 settings = Settings()
 
 if __name__ == '__main__':
-    print(settings.LLM_MODEL)
+    print(settings.llm_base_url)
