@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     2. 类型校验（自动的类型转换） os.getenv('APP_PORT')
     3.  SettingsConfigDict()实例之后一定要用变量接收一下 不然就被回收掉了而且变量名一定要叫默认使用的model_config
     """
-    model_config=SettingsConfigDict(env_file=ENV_FILE_PATH, env_file_encoding="utf-8", extra='ignore')  # .env 文件中有的key 但是在配置中没有定义，不会报错
+    model_config=SettingsConfigDict(env_file=ENV_FILE_PATH,
+                                    env_file_encoding="utf-8",
+                                    extra='ignore')  # .env 文件中有的key 但是在配置中没有定义，不会报错
 
     llm_model: str
     llm_base_url: str
