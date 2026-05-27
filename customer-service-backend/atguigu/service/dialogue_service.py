@@ -24,7 +24,7 @@ class DialogueService:
         dialogue_state = await self.dialogue_repository.load(user_message.sender_id)
 
         # 2. 调用引擎使用对话状态对象 进行业务的各种计算操作(引擎)
-        process_result = await self.dialogue_engine.hand_dialogue(dialogue_state, user_message)
+        process_result = await self.dialogue_engine.handle_dialogue(dialogue_state, user_message)
 
         # 3. 通过save 将对话的聚合根写入到数据库中 I 阶段
         await self.dialogue_repository.save(dialogue_state)

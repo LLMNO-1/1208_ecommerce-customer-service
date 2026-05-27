@@ -210,11 +210,11 @@ class DialogueState:
         开启session
         :return:
         """
-        if self.current_session() is None:
-            now = time.time()
-            session = Session(session_id=str(uuid.uuid4()), started_at=now, last_activity_at=now)
-            self.sessions.append(session)
-            self.current_session_id = session.session_id
+
+        now = time.time()
+        session = Session(session_id=str(uuid.uuid4()), started_at=now, last_activity_at=now)
+        self.sessions.append(session)
+        self.current_session_id = session.session_id
 
     def close_session(self):
         if self.current_session() is not None:
