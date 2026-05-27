@@ -10,6 +10,9 @@ from atguigu.task.flow.flows import FlowsList
 from atguigu.plan.turn_validator import TurnPlanValidator
 from atguigu.knowledge.intents import KnowledgeIntent
 from atguigu.clarify.responder import ClarifyResponder
+from atguigu.plan.turn_plan import ClarifyReason
+from atguigu.task.command.models import SetSlotsCommand, Command
+from atguigu.task.flow.steps import CollectedFlowStep
 class DialogueEngine:
     """
     调度中心（只协调各个组件、身上的各个组件真正干活）
@@ -42,24 +45,25 @@ class DialogueEngine:
         # 3. 判断消息类型
         # 3.1 文本消息类型
         if user_message.type is MessageType.TEXT:
-            msgs = await self._handle_text_msg(state, self.turn_planner,
+            msgs = await self._handle_text_msg(state,
+                                               self.turn_planner,
                                                self.task_handler.flows,
                                                self.knowledge_handler.knowledge_intents)
         else:
-            # TODO
-            self._handle_obj_msg()
+            state.set_focused_object(user_message.object)
+            msgs = await self._handle_obj_msg(user_message, state, self.task_handler.flows)
 
-        # 4. 提交 TODO
+        # 4. 更新turn中的BotMessage
+        state.pending_turn.bot_messages.extend(msgs)
 
-        # 5. 返回
+        # 5. 提交
+        state.commit_turn()
+
+        # 6. 返回
         return ProcessResult(
             sender_id=user_message.sender_id,
             message_id=user_message.message_id,
-            messages=[
-                BotMessage(text="我是智能小客服"),
-                BotMessage(text="欢迎你来到这里...")
-            ]
-
+            messages=msgs
         )
 
     def _prepare_session(self, state: DialogueState) -> None:
@@ -94,12 +98,22 @@ class DialogueEngine:
     def _begin_turn(self, state: DialogueState, user_message: UserMessage):
         state.begin_turn(user_message)
 
-    def _handle_obj_msg(self):
-        """
-        处理对象类型的消息
-        :return:
-        """
-        pass
+    async def _handle_obj_msg(self, user_message: UserMessage,
+                              state: DialogueState,
+                              flows: FlowsList) -> list[BotMessage]:
+
+        # 1. 将对象解析成command(SetSlotsCommand)
+        command = self._resolve_object_command(user_message, state, flows)
+        # 2. 判断command是否有(流程的步骤刚好需要你点击的卡片) 退后续的流程即可（槽位填好了）
+        if command:
+            return self.task_handler.handle()
+
+        # 3. 业务流程存在
+        if state.active_task is not None:
+            return self.task_handler.handle()
+
+        # 4. 业务流程不存在
+        return await self.clarify_responder.respond(state, reason=ClarifyReason.OBJECT_REQUIRES_INTENT)
 
     async def _handle_text_msg(self, state: DialogueState,
                                turn_planner: TurnPlanner,
@@ -131,3 +145,55 @@ class DialogueEngine:
             return self.knowledge_handler.handle()
         else:
             return self.chit_chat_handler.handle()
+
+    def _resolve_object_command(self, user_message: UserMessage,
+                                state: DialogueState,
+                                flows: FlowsList) -> list[Command]:
+
+        # 1. 获取对象消息
+        user_obj = user_message.object
+        if user_obj is None:
+            return []
+        # 2. 获取对象消息的类型
+        object_type = user_obj.type
+
+        # 3. 判读对象的类型
+        if object_type == "order":
+            if self._flow_has_unfilled_collect_slot(state, flows, "order_number"):
+                return [SetSlotsCommand(command="set_slots", slots={"order_number": user_obj.id})]
+
+            return []
+
+        # 3. 判读对象的类型
+        if object_type == "product":
+            if self._flow_has_unfilled_collect_slot(state, flows, "product_id"):
+                return [SetSlotsCommand(command="set_slots", slots={"product_id": user_obj.id})]
+            return []
+
+        return []
+
+    def _flow_has_unfilled_collect_slot(self, state: DialogueState,
+                                        flows: FlowsList, slot_name: str) -> bool:
+
+        # 1. 获取活跃任务
+        active_task = state.active_task
+
+        # 2. 是否存在活跃任务-----(澄清)
+        if active_task is None:
+            return False
+
+        # 3. 从活跃任务中获取流程
+        flow_id = active_task.flow_id
+        flow = flows.get_flow_by_id(flow_id)
+        if flow is None:
+            return False
+
+        # 4. 判断该流程中的上下文当前槽位是否已经填过
+        if active_task.slots.get(slot_name):
+            return False
+
+        for step in flow.steps:
+            if isinstance(step, CollectedFlowStep) and step.slot_name == slot_name:
+                return True
+
+        return False
