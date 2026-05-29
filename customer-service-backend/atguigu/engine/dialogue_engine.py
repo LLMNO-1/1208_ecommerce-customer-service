@@ -1,24 +1,25 @@
 import time
-from typing import Dict, List
+from typing import Dict, Any
 from atguigu.domain.state import DialogueState, Session
 from atguigu.domain.messages import UserMessage, ProcessResult, BotMessage, MessageType
 from atguigu.plan.planner import TurnPlanner
+from atguigu.task.command.models import Command
 from atguigu.task.handler import TaskHandler
 from atguigu.knowledge.handler import KnowLedgeHandler
 from atguigu.chitchat.handler import ChitChatHandler
 from atguigu.task.flow.flows import FlowsList
 from atguigu.plan.turn_validator import TurnPlanValidator
-from atguigu.knowledge.intents import KnowledgeIntent
 from atguigu.clarify.responder import ClarifyResponder
+from atguigu.knowledge.intents import KnowledgeIntent
 from atguigu.plan.turn_plan import ClarifyReason
-from atguigu.task.command.models import SetSlotsCommand, Command
+from atguigu.task.command.models import SetSlotsCommand
 from atguigu.task.flow.steps import CollectedFlowStep
+
+
 class DialogueEngine:
     """
     调度中心（只协调各个组件、身上的各个组件真正干活）
-
     """
-
     def __init__(self,
                  turn_planner: TurnPlanner,
                  turn_validator: TurnPlanValidator,
@@ -98,27 +99,10 @@ class DialogueEngine:
     def _begin_turn(self, state: DialogueState, user_message: UserMessage):
         state.begin_turn(user_message)
 
-    async def _handle_obj_msg(self, user_message: UserMessage,
-                              state: DialogueState,
-                              flows: FlowsList) -> list[BotMessage]:
-
-        # 1. 将对象解析成command(SetSlotsCommand)
-        command = self._resolve_object_command(user_message, state, flows)
-        # 2. 判断command是否有(流程的步骤刚好需要你点击的卡片) 退后续的流程即可（槽位填好了）
-        if command:
-            return self.task_handler.handle()
-
-        # 3. 业务流程存在
-        if state.active_task is not None:
-            return self.task_handler.handle()
-
-        # 4. 业务流程不存在
-        return await self.clarify_responder.respond(state, reason=ClarifyReason.OBJECT_REQUIRES_INTENT)
-
     async def _handle_text_msg(self, state: DialogueState,
                                turn_planner: TurnPlanner,
                                flows: FlowsList,
-                               knowledge_intents: Dict[str,KnowledgeIntent]
+                               knowledge_intents: Dict[str, KnowledgeIntent]
                                ) -> list[BotMessage]:
         """
         处理文本类型消息
@@ -128,10 +112,10 @@ class DialogueEngine:
         """
 
         # 1. 利用意图分析器调用LLM，确定任务轨道
-        turn_plan = await turn_planner.predict(state, flows=flows,intents=knowledge_intents)
+        turn_plan = await turn_planner.predict(state, flows=flows, intents=knowledge_intents)
 
         # 2. 校验
-        validated =self.turn_validator.validate(state,turn_plan,flow_list=flows,intents=knowledge_intents)
+        validated = self.turn_validator.validate(state, turn_plan, flow_list=flows, intents=knowledge_intents)
 
         # 2.1 如果校验不通过，需要意图澄清器澄清意图
         if not validated.valid:
@@ -140,11 +124,28 @@ class DialogueEngine:
         # 2.2 如果校验通过，执行对应某一条轨道进行对应的处理
 
         if turn_plan.task is not None:
-            return self.task_handler.handle()
+            return await self.task_handler.handle(state, commands=turn_plan.task.commands)
         elif turn_plan.knowledge is not None:
             return self.knowledge_handler.handle()
         else:
             return self.chit_chat_handler.handle()
+
+    async def _handle_obj_msg(self, user_message: UserMessage,
+                              state: DialogueState,
+                              flows: FlowsList) -> list[BotMessage]:
+
+        # 1. 将对象解析成command(SetSlotsCommand)
+        commands = self._resolve_object_command(user_message, state, flows)
+        # 2. 判断command是否有(流程的步骤刚好需要你点击的卡片) 退后续的流程即可（槽位填好了）
+        if commands:
+            return await self.task_handler.handle(state, commands=commands)
+
+        # 3. 业务流程存在
+        if state.active_task is not None:
+            return self.task_handler.handle()
+
+        # 4. 业务流程不存在
+        return await self.clarify_responder.respond(state, reason=ClarifyReason.OBJECT_REQUIRES_INTENT)
 
     def _resolve_object_command(self, user_message: UserMessage,
                                 state: DialogueState,

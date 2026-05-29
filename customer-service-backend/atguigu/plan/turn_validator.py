@@ -5,6 +5,7 @@ from atguigu.task.command.models import StartFlowCommand, SetSlotsCommand, Resum
 from atguigu.knowledge.intents import KnowledgeIntent
 from atguigu.domain.state import DialogueState
 
+
 class TurnPlanValidator:
 
     def validate(self,

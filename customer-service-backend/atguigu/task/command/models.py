@@ -14,7 +14,6 @@ class Command:
         return Command(command="unknown")
 
 
-
 @dataclass
 class StartFlowCommand(Command):
     flow: str  # 开启的新的业务流程的流程ID(LLM提供你的，你给了一份可用的流程清单：available_flows_json)
@@ -32,9 +31,7 @@ class CancelFlowCommand(Command):
 
 @dataclass
 class ResumeFlowCommand(Command):
-    flow: str | None = None   # 恢复指定的业务流程或者当前活跃的业务流程（LLM生成的，你给了interrupted_tasks_json）
-
-
+    flow: str | None = None  # 恢复指定的业务流程或者当前活跃的业务流程（LLM生成的，你给了interrupted_tasks_json）
 
 
 COMMAND_NAME_TO_CLASS = {
@@ -44,11 +41,8 @@ COMMAND_NAME_TO_CLASS = {
     "resume_flow": ResumeFlowCommand,
 }
 
-
 if __name__ == '__main__':
     # c = CancelFlowCommand(command="xxxx")
     c = Command(command="xxxx")
 
     print(isinstance(c, StartFlowCommand))
-
-

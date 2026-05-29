@@ -27,7 +27,6 @@ class FlowLoader:
             single_flows_list = self.load(path)
             # 2. 获取单个yaml的flows
             flows.extend(single_flows_list.flows)
-
             duplicate_slot_name = set(slots).intersection(single_flows_list.slots)
             if duplicate_slot_name:  # 去重可选(建议做去重)
                 duplicates = ", ".join(sorted(duplicate_slot_name))
@@ -127,4 +126,3 @@ if __name__ == '__main__':
     loader = FlowLoader()
     flows_list = loader.load_many([user_flow_path, system_flow_path])
     print(flows_list)
-

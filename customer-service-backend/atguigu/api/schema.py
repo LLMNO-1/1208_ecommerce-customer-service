@@ -6,7 +6,7 @@
 """
 from pydantic import BaseModel
 
-#给前端使用的，内部不用
+
 class ChatObject(BaseModel):
     type: str
     id: str
@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
     sender_id: str  # 用户ID
     message_id: str | None = None  # 消息ID
     text: str | None = None  # 文本类型消息
-    object: ChatObject | None = None  # 对象类型消息  (text内容和object内容不可能同时有),
+    object: ChatObject | None = None  # 对象类型消息  (text内容和object内容不可能同时有)
 
 
 class ChatBotMessage(BaseModel):

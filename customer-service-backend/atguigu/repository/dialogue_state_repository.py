@@ -1,9 +1,6 @@
 import json
-#而 AsyncSession 允许程序在等待数据库响应的同时，去处理其他用户的请求
 from sqlalchemy.ext.asyncio import AsyncSession
-#它让你不用写原生的字符串 SQL 语句（比如 SELECT * FROM users），而是用面向对象（Python 代码）的方式来构建查询
 from sqlalchemy import select
-#专门针对 MySQL 数据库优化的 INSERT 插入语句构建器
 from sqlalchemy.dialects.mysql import insert  # 小小
 from atguigu.domain.state import DialogueState
 from atguigu.model.dialogue_state_record import DialogueStateRecord
@@ -44,23 +41,20 @@ class DialogueStateRepository:
         """
 
         # 1. 得到DialogueState的json字符串
-        #将字典序列化为文本字符串，以便存入数据库的 TEXT 或 JSON 类型的字段中
-        state_json: str = json.dumps(dialogue_state.to_dict())
+        state_json: str = json.dumps(dialogue_state.to_dict(), ensure_ascii=False)
 
         # 2. 定义插入的sql语句
         insert_stmt = insert(DialogueStateRecord).values(
             sender_id=dialogue_state.sender_id, state_json=state_json
         )
 
-        # 3. 升级update语句的sql，如果冲突就更新”的智能语句
+        # 3. 升级update语句的sql
         update_stmt = insert_stmt.on_duplicate_key_update(
             state_json=insert_stmt.inserted.state_json
         )
 
-        # 4. 执行sql，它负责将 SQLAlchemy 的对象（update_stmt）翻译成真正的 MySQL 字符串语句并执行
+        # 4. 执行sql
         await  self.session.execute(update_stmt)
 
         # 5. 提交
-        #如果在第 4 步或之前程序崩溃了，数据库会自动回滚（Rollback），仿佛什么都没发生过。
-        #只有当执行了 await session.commit()，数据才算彻底安全落地
         await self.session.commit()

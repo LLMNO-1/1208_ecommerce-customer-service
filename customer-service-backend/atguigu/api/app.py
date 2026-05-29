@@ -8,6 +8,7 @@ from atguigu.api.router.chat_router import router
 from atguigu.infrastructure.database import init_db_engine, close_db_engine
 from atguigu.api.dependencies import init_dialogue_engine
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """

@@ -71,7 +71,7 @@ class DialogueState:
     focused_object: FocusedObject | None = None
     sessions: list[Session] = field(default_factory=list)  # 当前用户的所有回话都存储起来
     current_session_id: str | None = None  # 当前用户的session的sessionID
-    pending_turn: Turn | None = None  # turn会话的暂存区（变量：内存中缓冲区）不会持久化
+    pending_turn: Turn | None = None  # turn会话的暂存区（变量：内存中缓冲区） 不会持久化
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -81,8 +81,7 @@ class DialogueState:
             "active_system_task": self.active_system_task.to_dict() if self.active_system_task else None,
             "focused_object": self.focused_object.to_dict() if self.focused_object else None,
             "sessions": [session.to_dict() for session in self.sessions],
-            "current_session_id": self.current_session_id,
-           # "pending_turn": self.pending_turn.to_dict() if self.pending_turn else None
+            "current_session_id": self.current_session_id
         }
 
     @classmethod
@@ -140,27 +139,33 @@ class DialogueState:
         self.paused_tasks.append(self.active_task)
         self.active_task = None
 
-    def resumed_active_task(self, flow_id: str | None):
+    def resumed_active_task(self, flow_id: str | None = None) -> bool:
         """
         恢复业务任务:流程ID
-        :return:
+        :return: 要不恢复成功 要不就是回复失败
         """
-        # 1. 恢复最近的任务
-        if not flow_id:
+
+        # 1. 判断栈中是否存在中断的业务任务
+        if not self.paused_tasks:
+            return False
+
+        # 2. 判断业务流程ID 是否存在
+        # 2.1 如果不存在(只能恢复栈顶的)
+        if flow_id is None:
             task = self.paused_tasks.pop()
             self.active_task = task
-            return
+            return True
+        # 2.2 如果存在
+        for i, paused_task in enumerate(self.paused_tasks):
+            if paused_task.flow_id == flow_id:
+                # a) 激活
+                self.active_task = paused_task
+                # b) 删除
+                del self.paused_tasks[i]
 
-        # 2. 精确恢复某一暂停的业务任务
-        for task in self.paused_tasks:
-            if task.flow_id == flow_id:
-                self.active_task = task
-                self.paused_tasks.remove(task)  # 当前恢复任务从栈中移除掉
-                return
+                return True
 
-        # 3. 兜底
-        task = self.paused_tasks.pop()
-        self.active_task = task
+        return False
 
     def cancel_active_task(self):
         self.active_task = None
@@ -187,7 +192,7 @@ class DialogueState:
     def current_active_task(self):
         """
         当前正在执行的任务（系统流程、业务任务）
-        先获取系统流程 如果获取不到 获取业务任务(TODO：引擎跑的时候)
+        先获取系统流程 如果获取不到 获取业务任务
         :return:
         """
 
@@ -233,7 +238,6 @@ class DialogueState:
         self.paused_tasks = []
         self.focused_object = None
         self.pending_turn = None
-        self.current_session_id = None
 
     # --------------turn相关的--------------------------
 
@@ -241,7 +245,7 @@ class DialogueState:
         if self.current_session():
             turn = Turn(turn_id=str(uuid.uuid4()), user_message=message, bot_messages=[])
             self.pending_turn = turn
-    #从临时状态变为持久化到 session 的历史记录中
+
     def commit_turn(self):
         if self.current_session():
             self.current_session().turns.append(self.pending_turn)
@@ -250,4 +254,3 @@ class DialogueState:
     # --------------FocusedObject相关的--------------------------
     def set_focused_object(self, focused_object: FocusedObject):
         self.focused_object = focused_object
-

@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import Enum
-
 from atguigu.task.command.models import Command
 
 
@@ -15,8 +14,7 @@ class TaskTurnPlan:
 
 @dataclass
 class KnowledgeTurnPlan:
-    intents: list[str] = field(default_factory=list)
-
+    intents: list[str] = field(default_factory=list)   #
 
     @classmethod
     def from_dict(cls, data: dict) -> "KnowledgeTurnPlan":
@@ -34,9 +32,9 @@ class TurnPlan:
     轮的规划结果(三种任务轨道)---（扩展点，并行处理：后续继续实现）
 
     """
-    task: TaskTurnPlan | None = None                                # 业务任务---业务任务的轨道
-    knowledge: KnowledgeTurnPlan | None = None                      # 信息质询---信息咨询业务轨道
-    chitchat: ChitchatTurnPlan | None = None                        # 闲聊的 ----闲聊业务轨道
+    task: TaskTurnPlan | None = None  # 业务任务---业务任务的轨道
+    knowledge: KnowledgeTurnPlan | None = None  # 信息质询---信息咨询业务轨道
+    chitchat: ChitchatTurnPlan | None = None  # 闲聊的 ----闲聊业务轨道
 
     @classmethod
     def from_dict(cls, data: dict) -> "TurnPlan":
@@ -47,7 +45,6 @@ class TurnPlan:
         )
 
 
-#这样写能让这些枚举值同时具备字符串的特性
 class ClarifyReason(str, Enum):
     MISSING_TRACK = "missing_track"
     MULTIPLE_TRACKS = "multiple_tracks"
@@ -59,18 +56,8 @@ class ClarifyReason(str, Enum):
     MULTIPLE_TASK_FLOWS = "multiple_task_flows"
     UNKNOWN_TASK_FLOW = "unknown_task_flow"
 
-#@dataclass 后，Python 会自动帮你生成 __init__、__repr__（美化打印输出）等底层方法，让代码极其干净，专门用来当做“数据载体”。
+
 @dataclass
 class TurnPlanValidationResult:
     valid: bool
-    #等同于旧版本的 Optional[ClarifyReason]
     reason: ClarifyReason | None = None
-
-
-
-
-
-
-
-
-

@@ -45,7 +45,6 @@ class FocusedObject:
             attributes=data.get('attributes', {})
         )
 
-
 @dataclass(slots=True)
 class UserMessage:
     sender_id: str  # 用户ID(必填字段)
@@ -77,8 +76,8 @@ class UserMessage:
 
 @dataclass(slots=True)
 class BotMessage:
-    text: str | None = None
-    object: FocusedObject | None = None
+    text: str | None = None               # 主要回复消息的内容
+    object: FocusedObject | None = None   # 扩展字段
 
     def to_dict(self) -> Dict[str, Any]:
         return {

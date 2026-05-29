@@ -13,7 +13,7 @@ class DialogueService:
         self.dialogue_repository = dialogue_state_repository
         self.dialogue_engine = dialogue_engine
 
-    async def hand_message(self, user_message: UserMessage) -> ProcessResult:
+    async def handle_message(self, user_message: UserMessage) -> ProcessResult:
         """
         核心处理逻辑(IO：很慢/计算:调用LLM以及执行引擎、比较慢)
         :param user_message:

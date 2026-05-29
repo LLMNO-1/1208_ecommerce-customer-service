@@ -2,8 +2,7 @@ from typing import List, Dict, Any
 from atguigu.domain.state import Turn
 from atguigu.domain.messages import UserMessage, BotMessage, FocusedObject, MessageType
 
-#`state` 里存的消息是 `UserMessage` / `BotMessage`对象，
-#而塞进 prompt 的必须是纯文本。中间需要一层"把消息对象渲染成文本"的转换
+
 class HistoryBuilder:
     """
 

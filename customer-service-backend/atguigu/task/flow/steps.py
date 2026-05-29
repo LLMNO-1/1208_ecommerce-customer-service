@@ -143,7 +143,7 @@ class CollectedFlowStep(FlowStep):
         )
 
 
-# 类的类型 实例类型 type[FlowStep]代表的是这个类本身（Class），它是一个工厂，用来生产对象的。
+# 类的类型 实例类型
 TYPE_TO_FLOW_STEP: Dict[str, type[FlowStep]] = {
     "start": StartedFlowStep,
     "action": ActionFlowStep,
