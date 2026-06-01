@@ -20,6 +20,7 @@ class DialogueEngine:
     """
     调度中心（只协调各个组件、身上的各个组件真正干活）
     """
+
     def __init__(self,
                  turn_planner: TurnPlanner,
                  turn_validator: TurnPlanValidator,
@@ -42,7 +43,17 @@ class DialogueEngine:
 
         # 2. 开启turn
         self._begin_turn(state, user_message)
-
+        """
+        pending_turn=Turn(
+          turn_id="turn-002-uuid",
+          user_message=UserMessage(
+              sender_id="user_001",
+              message_id="msg-abc-123",
+              type=MessageType.TEXT,
+              text="这件商品的退货政策是什么",
+              object=None
+          )
+        """
         # 3. 判断消息类型
         # 3.1 文本消息类型
         if user_message.type is MessageType.TEXT:
@@ -59,7 +70,26 @@ class DialogueEngine:
 
         # 5. 提交
         state.commit_turn()
+        """
+        这个 list[BotMessage] 会继续回到 handle_dialogue 方法：
 
+  # 第 59 行：把 bot 回复追加到当前 turn
+  state.pending_turn.bot_messages.extend(msgs)
+
+  # 第 62 行：提交 turn 到 session 的历史记录
+  state.commit_turn()
+  # → state.current_session().turns.append(state.pending_turn)
+  # → state.pending_turn = None
+
+  # 第 65-69 行：封装返回
+  return ProcessResult(
+      sender_id="user_001",
+      message_id="msg-abc-123",
+      messages=msgs  # [BotMessage(text="非常抱歉...")]
+  )
+
+  最后 DialogueService 把这个 ProcessResult 返回给路由层，路由层转成 ChatResponse 响应给前端。
+        """
         # 6. 返回
         return ProcessResult(
             sender_id=user_message.sender_id,
@@ -126,9 +156,123 @@ class DialogueEngine:
         if turn_plan.task is not None:
             return await self.task_handler.handle(state, commands=turn_plan.task.commands)
         elif turn_plan.knowledge is not None:
-            return self.knowledge_handler.handle()
+
+            """
+            DialogueState(
+      sender_id="user_001",
+
+      # 当前没有活跃的业务任务
+      active_task=None,
+
+      # 没有暂停的任务
+      paused_tasks=[],
+
+      # 没有活跃的系统流程
+      active_system_task=None,
+
+      # 聚焦对象：用户之前点击的商品卡片（从MySQL加载出来的）
+      focused_object=FocusedObject(
+          id="prod_2024001",
+          type="product",
+          title="华为Mate60 Pro 256GB 雅丹黑",
+          attributes={
+              "price": "6999",
+              "url": "https://img.example.com/mate60pro.jpg",
+              "brand": "华为",
+              "category": "手机"
+          }
+      ),
+
+      # 会话列表（有一个活跃的session）
+      sessions=[
+          Session(
+              session_id="sess-uuid-xxxx",
+              started_at=1748592000.0,        # 2025-05-30 的时间戳
+              last_activity_at=1748595600.0,  # 刚刚更新过
+              closed_at=None,                 # 未关闭
+              turns=[
+                  # 之前的历史对话轮次
+                  Turn(
+                      turn_id="turn-001",
+                      user_message=UserMessage(
+                          sender_id="user_001",
+                          message_id="msg-prev-001",
+                          type=MessageType.OBJECT,
+                          text=None,
+                          object=FocusedObject(
+                              id="prod_2024001",
+                              type="product",
+                              title="华为Mate60 Pro 256GB 雅丹黑",
+                              attributes={"price": "6999", "url": "https://img.example.com/mate60pro.jpg"}
+                          )
+                      ),
+                      bot_messages=[
+                          BotMessage(
+                              text="您正在查看华为Mate60 Pro 256GB 雅丹黑，售价6999元，请问有什么可以帮您？",
+                              object=None
+                          )
+                      ]
+                  )
+              ]
+          )
+      ],
+
+      # 当前session的ID
+      current_session_id="sess-uuid-xxxx",
+
+      # 当前正在处理的轮（刚刚由 _begin_turn 创建）
+      pending_turn=Turn(
+          turn_id="turn-002-uuid",
+          user_message=UserMessage(
+              sender_id="user_001",
+              message_id="msg-abc-123",
+              type=MessageType.TEXT,
+              text="这件商品的退货政策是什么",
+              object=None
+          ),
+          bot_messages=[]  # 还没有机器人回复，等handler填充
+      )
+  )
+  
+  
+  knowledge_handler.handle(state, ["return_policy"])
+  │
+  ├── ① _get_provider_ids_by_intents(["return_policy"])
+  │   │   遍历 intents → 查 KNOWLEDGE_INTENTS 字典
+  │   │   "return_policy".provider_ids = ["faq.default", "rag.default"]
+  │   │   set 去重
+  │   └── 返回 ["faq.default", "rag.default"]
+  │
+  ├── ② 遍历 provider_ids，逐个检索
+  │   │
+  │   ├── registry.get("faq.default") → FAQProvider
+  │   │   └── FAQProvider.retrieve(state)
+  │   │       └── 桩实现 → [KnowledgeChunk(content="未检索到相关问题")]
+  │   │
+  │   ├── registry.get("rag.default") → RAGProvider
+  │   │   └── RAGProvider.retrieve(state)
+  │   │       └── 桩实现 → [KnowledgeChunk(content="未检索到相关信息")]
+  │   │
+  │   └── chunks = [chunk1, chunk2]
+  │
+  └── ③ knowledge_responder.respond(user_message, recent_turns, chunks)
+      │
+      ├── 准备上下文：
+      │   ├── _render_user_message() → "这件商品的退货政策是什么"
+      │   ├── HistoryBuilder.build(turns[-5:]) → "USER: [商品对象...]\nBOT: 您正在查看..."
+      │   └── "\n\n".join(chunks) → "未检索到相关问题\n\n未检索到相关信息"
+      │
+      ├── 构造 chain：jinja2模板 → LLM → StrOutputParser
+      │
+      ├── chain.ainvoke({...}) → LLM 生成回复文本
+      │
+      └── 返回 [BotMessage(text="非常抱歉，目前...")]
+            """
+            return await self.knowledge_handler.handle(state, turn_plan.knowledge.intents)
+
+
         else:
-            return self.chit_chat_handler.handle()
+            return await self.chit_chat_handler.handle(state)
 
     async def _handle_obj_msg(self, user_message: UserMessage,
                               state: DialogueState,
@@ -142,7 +286,7 @@ class DialogueEngine:
 
         # 3. 业务流程存在
         if state.active_task is not None:
-            return self.task_handler.handle()
+            return await self.task_handler.handle(state, commands=[])
 
         # 4. 业务流程不存在
         return await self.clarify_responder.respond(state, reason=ClarifyReason.OBJECT_REQUIRES_INTENT)

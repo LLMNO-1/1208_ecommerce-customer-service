@@ -275,3 +275,254 @@ class CommandProcessor:
                 resumed_flow_id=resumed.flow_id,
                 resumed_flow_name=self._readable_flow_name(resumed.flow_id, flow_list),
             )
+
+
+"""
+DialogueState (对话状态)
+  ├── active_task: TaskContext | None    ← 当前正在执行的业务任务
+  ├── paused_tasks: list[TaskContext]    ← 被中断暂存的业务任务栈
+  └── active_system_task: SystemContext | None ← 当前执行的系统流程
+
+  TaskContext (业务任务上下文)
+  ├── flow_id: str     ← 如 "order_status_query"
+  ├── step_id: str     ← 如 "start"
+  └── slots: dict      ← 如 {"order_number": "A20240315001"}
+
+  关键概念：
+  - 业务任务 = 用户真正想做的事（查订单、退款等）
+  - 系统流程 = 框架自动插入的"过场动画"（开启提示、中断提示、恢复提示等）
+  - paused_tasks 是一个栈，被中断的任务压入栈中，恢复时从栈中弹出
+
+第1轮：全新开启（分支 1.2 + 栈中无你）
+
+  用户说"帮我查一下订单状态"，LLM 返回：
+  command = StartFlowCommand(command="start_flow", flow="order_status_query")
+
+  当前状态：
+  active_task = None
+  paused_tasks = []
+
+  步骤 0：关闭当前系统流程
+
+  state.end_active_system_task()  # active_system_task = None
+  先把上一个系统流程清掉（当前没有，所以无事发生）。
+
+  步骤 0.1：检查是否是系统流程
+
+  if command.flow.startswith("system_"):
+      raise ValueError(...)
+  "order_status_query" 不以 "system_" 开头，通过。
+
+  步骤 0.2：检查流程是否存在
+
+  flow = flow_list.get_flow_by_id("order_status_query")  # 从流程注册表中查找
+  假设存在，拿到 flow 对象。
+
+  步骤 1：走哪个分支？
+
+  active_task = state.active_task  # None
+  因为 active_task is None，跳过分支 1.1，进入分支 1.2（当前没有业务任务）。
+
+  分支 1.2：尝试从栈中恢复
+
+  resumed = state.resumed_active_task("order_status_query")
+  看 resumed_active_task 的逻辑：
+  def resumed_active_task(self, flow_id):
+      if not self.paused_tasks:      # 栈是空的 → return False
+          return False
+      ...
+  paused_tasks = []，所以直接返回 False，栈中没你。
+
+  栈中没你 → 全新开启
+
+  state.start_active_task(TaskContext(
+      flow_id="order_status_query",
+      step_id="start"        # 流程的起始步骤
+  ))
+  此时状态变为：
+  active_task = TaskContext(flow_id="order_status_query", step_id="start", slots={})
+
+  激活"开启系统流程"（开场白）
+
+  self._activate_start_system_task(state, flow_list,
+      started_flow_id="order_status_query",
+      started_flow_name="订单状态查询")
+  这个函数查找 system_task_started 系统流程，设置 active_system_task：
+  state.start_active_system_task(StartedSystemContext(
+      flow_id="system_task_started",
+      step_id="start",
+      started_flow_id="order_status_query",
+      started_flow_name="订单状态查询"
+  ))
+
+  第1轮结束后的状态：
+
+  active_task = TaskContext(flow_id="order_status_query", ...)
+  paused_tasks = []
+  active_system_task = StartedSystemContext(started_flow_name="订单状态查询", ...)
+
+  效果：系统流程会渲染一段开场白，比如"好的，我来帮您查询订单状态~"，然后进入订单状态查询的业务流程。
+
+  ---
+  第2轮：中断别人（分支 1.1 + 栈中无你）
+
+  用户说"我要退款"，LLM 返回：
+  command = StartFlowCommand(command="start_flow", flow="refund")
+
+  当前状态（从第1轮继承）：
+  active_task = TaskContext(flow_id="order_status_query", ...)
+  paused_tasks = []
+
+  步骤 0 ~ 0.2：同上，检查通过。
+
+  步骤 1：走哪个分支？
+
+  active_task = state.active_task  # 不是 None！是 order_status_query
+  进入分支 1.1（当前已经有业务任务）。
+
+  分支 1.1-a：是不是同一个流程？
+
+  if active_task.flow_id == command.flow:
+      # "order_status_query" == "refund" ? → False，不return
+
+  分支 1.1-b：中断别人
+
+  state.interrupted_active_task()
+  这个函数做了：
+  def interrupted_active_task(self):
+      self.paused_tasks.append(self.active_task)  # 把 order_status_query 压入暂停栈
+      self.active_task = None                      # 清空活跃任务
+
+  状态变为：
+  active_task = None
+  paused_tasks = [TaskContext(flow_id="order_status_query", ...)]  ← 被中断的
+
+  检查自己在不在栈中
+
+  if not state.resumed_active_task("refund"):
+  resumed_active_task("refund") 遍历 paused_tasks：
+  - paused_tasks[0].flow_id = "order_status_query" ≠ "refund" → 找不到，返回 False
+
+  所以 not False = True，进入 ①：栈中没你，需要新开：
+  state.start_active_task(TaskContext(
+      flow_id="refund",
+      step_id="start"
+  ))
+  状态变为：
+  active_task = TaskContext(flow_id="refund", ...)
+  paused_tasks = [TaskContext(flow_id="order_status_query", ...)]
+
+  引出中断系统流程
+
+  self._activate_interrupted_system_task(state, flow_list,
+      interrupted_flow_id="order_status_query",    # 被中断的老任务
+      interrupted_flow_name="订单状态查询",
+      started_flow_id="refund",                    # 新开启的任务
+      started_flow_name="退款"
+  )
+  设置 active_system_task：
+  InterruptedSystemContext(
+      flow_id="system_task_interrupted",
+      interrupted_flow_id="order_status_query",
+      interrupted_flow_name="订单状态查询",
+      started_flow_id="refund",
+      started_flow_name="退款"
+  )
+
+  第2轮结束后的状态：
+
+  active_task = TaskContext(flow_id="refund", ...)
+  paused_tasks = [TaskContext(flow_id="order_status_query", ...)]  ← 订单查询在栈里等着
+  active_system_task = InterruptedSystemContext(...)
+
+  效果：系统流程会渲染一段中断过渡语，比如"订单状态查询已暂停，现在为您处理退款~"。
+
+  ---
+  第3轮：恢复栈中任务（分支 1.1 + 栈中有你）
+
+  用户说"算了，还是继续查订单吧"，LLM 返回：
+  command = StartFlowCommand(command="start_flow", flow="order_status_query")
+
+  当前状态（从第2轮继承）：
+  active_task = TaskContext(flow_id="refund", ...)
+  paused_tasks = [TaskContext(flow_id="order_status_query", ...)]
+
+  步骤 0 ~ 0.2：检查通过。
+
+  分支 1.1-a：是不是同一个流程？
+
+  # "refund" == "order_status_query" ? → False
+
+  分支 1.1-b：中断当前的 refund
+
+  state.interrupted_active_task()
+  状态变为：
+  active_task = None
+  paused_tasks = [
+      TaskContext(flow_id="order_status_query", ...),  ← 之前就在栈里
+      TaskContext(flow_id="refund", ...)               ← 刚压入的
+  ]
+
+  分支 1.1-b-②：检查自己在不在栈中
+
+  if not state.resumed_active_task("order_status_query"):
+  resumed_active_task("order_status_query") 遍历：
+  - paused_tasks[0].flow_id = "order_status_query" → 找到了！
+
+  它执行：
+  self.active_task = paused_task           # 恢复为活跃任务
+  del self.paused_tasks[0]                 # 从栈中删除
+  return True
+
+  状态变为：
+  active_task = TaskContext(flow_id="order_status_query", step_id=之前保存的step, slots=之前保存的slots)
+  paused_tasks = [TaskContext(flow_id="refund", ...)]
+
+  not True = False，所以走 ②：栈中有你，不用重复开：
+  # 不调用 state.start_active_task()，直接用恢复出来的任务
+  started_flow_id = "order_status_query"
+  started_flow_name = "订单状态查询"
+
+  引出中断系统流程
+
+  self._activate_interrupted_system_task(state, flow_list,
+      interrupted_flow_id="refund",              # 被中断的退款
+      interrupted_flow_name="退款",
+      started_flow_id="order_status_query",      # 恢复的订单查询
+      started_flow_name="订单状态查询"
+  )
+
+  第3轮结束后的状态：
+
+  active_task = TaskContext(flow_id="order_status_query", step_id=恢复的step, slots=恢复的slots)
+  paused_tasks = [TaskContext(flow_id="refund", ...)]  ← 退款在栈里等着
+  active_system_task = InterruptedSystemContext(...)
+
+  效果：订单状态查询从栈中恢复了之前保存的状态（包括已填的槽位和当前步骤），退款被压入栈底。系统流程渲染"退款已暂停，继
+  续为您查询订单状态~"。
+
+   一图总结
+
+  新请求来了
+      │
+      我在服务谁？
+     ┌────┴────┐
+    没人        有人
+     │           │
+     │      ┌────┴────┐
+     │    同一个人？  不同人？
+     │      │           │
+     │   什么都不做   让当前人等一等
+     │   (return)      │
+     │            ┌────┴────┐
+     │         新来的     新来的
+     │       之前等过？   没等过？
+     │           │           │
+     │     从等候本叫回来   重新招呼坐下
+     │     (保留之前进度)  (从第一步开始)
+     │           │           │
+     └─────┬─────┴─────┬─────┘
+           │           │
+        最后说一句合适的过渡语
+        （"好的" / "稍等" / "继续"）
+"""

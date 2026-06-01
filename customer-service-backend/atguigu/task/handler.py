@@ -24,7 +24,33 @@ class TaskHandler:
                      ) -> list[BotMessage]:
         # 1. 利用CommandProcessor 处理对应的Command
         self.processor.run(state, commands, self.flows)
-
+        # 2. 推荐yaml中定义的流程
+        # state:DialogueState（经过上述 7 步层层加工后的完整状态）
+        # state = DialogueState(
+        #     sender_id="user_001",
+        #     active_task=TaskContext(  # ← 新设置！
+        #         flow_id="refund_request",
+        #         step_id="start",
+        #         slots={}
+        #     ),
+        #     paused_tasks=[],
+        #     active_system_task=StartedSystemContext(  # ← 新设置！
+        #         flow_id="system_task_started",
+        #         step_id="start",
+        #         started_flow_id="refund_request",
+        #         started_flow_name="退款申请"
+        #     ),
+        #     focused_object=None,
+        #     sessions=[Session(session_id="sess_abc", ...)],
+        #     current_session_id="sess_abc",
+        #     pending_turn=Turn(
+        #         turn_id="turn_001",
+        #         user_message=UserMessage(text="我要退款", ...),
+        #         bot_messages=[]
+        #     )
+        # )
+        # flows FlowsList（从两个 YAML 加载的所有流程 + 槽位定义）
+        # action_runner ActionRunner（持有 ActionRegistry，可按名字查找 action 实例）
         # 2. 推荐yaml中定义的流程
         messages = await self.flow_executor.run_task(state, self.flows, self.action_runner)
 
